@@ -17,17 +17,20 @@ limitations under the License.
 package main
 
 import (
-	// "fmt"
-	// "io/ioutil"
 	"context"
+	"fmt"
+	"io/ioutil"
 	"net/http/httptest"
 	"strconv"
 	"testing"
 	"time"
 
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kube-state-metrics/pkg/options"
+	"k8s.io/kube-state-metrics/pkg/uclient"
 
 	"k8s.io/api/core/v1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	kcollectors "k8s.io/kube-state-metrics/pkg/collectors"
@@ -42,23 +45,27 @@ func BenchmarkKubeStateMetrics(t *testing.B) {
 		fixtureMultiplier,
 		requestCount,
 	)
-
 	kubeClient := fake.NewSimpleClientset()
 
+	//kubeClient := fake.NewSimpleClientset()
+	cfg, err := clientcmd.BuildConfigFromFlags("", "/Users/lili/.kube/config")
+	if err != nil {
+		t.Errorf("error injecting resources: %v", err)
+	}
+	uc := uclient.NewForConfig(cfg)
 	if err := injectFixtures(kubeClient, fixtureMultiplier); err != nil {
 		t.Errorf("error injecting resources: %v", err)
 	}
-
 	opts := options.NewOptions()
 
 	builder := kcollectors.NewBuilder(context.TODO(), opts)
 	builder.WithEnabledCollectors(options.DefaultCollectors)
-	builder.WithKubeClient(kubeClient)
+	builder.WithDynamicClient(uc)
 	builder.WithNamespaces(options.DefaultNamespaces)
 
 	collectors := builder.Build()
 
-	handler := metricHandler{collectors, false}
+	handler := MetricHandler{collectors, false}
 
 	req := httptest.NewRequest("GET", "http://localhost:8080/metrics", nil)
 
@@ -71,18 +78,18 @@ func BenchmarkKubeStateMetrics(t *testing.B) {
 		handler.ServeHTTP(w, req)
 	}
 
-	// resp := w.Result()
-	// body, _ := ioutil.ReadAll(resp.Body)
+	resp := w.Result()
+	body, _ := ioutil.ReadAll(resp.Body)
 
-	// fmt.Println(resp.StatusCode)
-	// fmt.Println(resp.Header.Get("Content-Type"))
-	// fmt.Println(string(body))
+	fmt.Println(resp.StatusCode)
+	fmt.Println(resp.Header.Get("Content-Type"))
+	fmt.Println(string(body))
 }
 
 func injectFixtures(client *fake.Clientset, multiplier int) error {
 	creators := []func(*fake.Clientset, int) error{
 		configMap,
-		pod,
+		//pod,
 	}
 
 	for _, c := range creators {

@@ -36,6 +36,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/kube-state-metrics/pkg/uclient"
 
 	kcollectors "k8s.io/kube-state-metrics/pkg/collectors"
 	"k8s.io/kube-state-metrics/pkg/options"
@@ -109,12 +110,18 @@ func main() {
 	}
 
 	proc.StartReaper()
-
-	kubeClient, err := createKubeClient(opts.Apiserver, opts.Kubeconfig)
+	/*
+		kubeClient, err := createKubeClient(opts.Apiserver, opts.Kubeconfig)
+		if err != nil {
+		}
+	*/
+	// TODO: set flags correctly :)
+	cfg, err := clientcmd.BuildConfigFromFlags(opts.Apiserver, opts.Kubeconfig)
 	if err != nil {
 		glog.Fatalf("Failed to create client: %v", err)
 	}
-	collectorBuilder.WithKubeClient(kubeClient)
+	uc := uclient.NewForConfig(cfg)
+	collectorBuilder.WithDynamicClient(uc)
 
 	ksmMetricsRegistry := prometheus.NewRegistry()
 	ksmMetricsRegistry.Register(kcollectors.ResourcesPerScrapeMetric)
@@ -202,7 +209,7 @@ func serveMetrics(collectors []*kcollectors.Collector, host string, port int, en
 	mux.Handle("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
 
 	// Add metricsPath
-	mux.Handle(metricsPath, &metricHandler{collectors, enableGZIPEncoding})
+	mux.Handle(metricsPath, &MetricHandler{collectors, enableGZIPEncoding})
 	// Add healthzPath
 	mux.HandleFunc(healthzPath, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
@@ -224,12 +231,12 @@ func serveMetrics(collectors []*kcollectors.Collector, host string, port int, en
 	log.Fatal(http.ListenAndServe(listenAddress, mux))
 }
 
-type metricHandler struct {
+type MetricHandler struct {
 	c                  []*kcollectors.Collector
 	enableGZIPEncoding bool
 }
 
-func (m *metricHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (m *MetricHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	resHeader := w.Header()
 	var writer io.Writer = w
 
