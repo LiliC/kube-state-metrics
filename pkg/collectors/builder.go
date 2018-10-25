@@ -20,7 +20,6 @@ package collectors
 import (
 	"strings"
 
-	apps "k8s.io/api/apps/v1beta1"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	batchv1 "k8s.io/api/batch/v1"
 	batchv1beta1 "k8s.io/api/batch/v1beta1"
@@ -30,11 +29,13 @@ import (
 	"golang.org/x/net/context"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/policy/v1beta1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/kube-state-metrics/pkg/metrics"
 	metricsstore "k8s.io/kube-state-metrics/pkg/metrics_store"
 	"k8s.io/kube-state-metrics/pkg/options"
+	"k8s.io/kube-state-metrics/pkg/uclient"
 )
 
 // Builder helps to build collectors. It follows the builder pattern
@@ -101,20 +102,20 @@ var availableCollectors = map[string]func(f *Builder) *Collector{
 	"deployments":              func(b *Builder) *Collector { return b.buildDeploymentCollector() },
 	"endpoints":                func(b *Builder) *Collector { return b.buildEndpointsCollector() },
 	"horizontalpodautoscalers": func(b *Builder) *Collector { return b.buildHPACollector() },
-	"jobs":                   func(b *Builder) *Collector { return b.buildJobCollector() },
-	"limitranges":            func(b *Builder) *Collector { return b.buildLimitRangeCollector() },
-	"namespaces":             func(b *Builder) *Collector { return b.buildNamespaceCollector() },
-	"nodes":                  func(b *Builder) *Collector { return b.buildNodeCollector() },
-	"persistentvolumeclaims": func(b *Builder) *Collector { return b.buildPersistentVolumeClaimCollector() },
-	"persistentvolumes":      func(b *Builder) *Collector { return b.buildPersistentVolumeCollector() },
-	"poddisruptionbudgets":   func(b *Builder) *Collector { return b.buildPodDisruptionBudgetCollector() },
-	"pods":                   func(b *Builder) *Collector { return b.buildPodCollector() },
-	"replicasets":            func(b *Builder) *Collector { return b.buildReplicaSetCollector() },
-	"replicationcontrollers": func(b *Builder) *Collector { return b.buildReplicationControllerCollector() },
-	"resourcequotas":         func(b *Builder) *Collector { return b.buildResourceQuotaCollector() },
-	"secrets":                func(b *Builder) *Collector { return b.buildSecretCollector() },
-	"services":               func(b *Builder) *Collector { return b.buildServiceCollector() },
-	"statefulsets":           func(b *Builder) *Collector { return b.buildStatefulSetCollector() },
+	"jobs":                     func(b *Builder) *Collector { return b.buildJobCollector() },
+	"limitranges":              func(b *Builder) *Collector { return b.buildLimitRangeCollector() },
+	"namespaces":               func(b *Builder) *Collector { return b.buildNamespaceCollector() },
+	"nodes":                    func(b *Builder) *Collector { return b.buildNodeCollector() },
+	"persistentvolumeclaims":   func(b *Builder) *Collector { return b.buildPersistentVolumeClaimCollector() },
+	"persistentvolumes":        func(b *Builder) *Collector { return b.buildPersistentVolumeCollector() },
+	"poddisruptionbudgets":     func(b *Builder) *Collector { return b.buildPodDisruptionBudgetCollector() },
+	"pods":                     func(b *Builder) *Collector { return b.buildPodCollector() },
+	"replicasets":              func(b *Builder) *Collector { return b.buildReplicaSetCollector() },
+	"replicationcontrollers":   func(b *Builder) *Collector { return b.buildReplicationControllerCollector() },
+	"resourcequotas":           func(b *Builder) *Collector { return b.buildResourceQuotaCollector() },
+	"secrets":                  func(b *Builder) *Collector { return b.buildSecretCollector() },
+	"services":                 func(b *Builder) *Collector { return b.buildServiceCollector() },
+	"statefulsets":             func(b *Builder) *Collector { return b.buildStatefulSetCollector() },
 }
 
 func (b *Builder) buildPodCollector() *Collector {
@@ -256,13 +257,6 @@ func (b *Builder) buildServiceCollector() *Collector {
 	return newCollector(store)
 }
 
-func (b *Builder) buildStatefulSetCollector() *Collector {
-	store := metricsstore.NewMetricsStore(generateStatefulSetMetrics)
-	reflectorPerNamespace(b.ctx, b.kubeClient, &apps.StatefulSet{}, store, b.namespaces, createStatefulSetListWatch)
-
-	return newCollector(store)
-}
-
 func reflectorPerNamespace(
 	ctx context.Context,
 	kubeClient clientset.Interface,
@@ -275,5 +269,55 @@ func reflectorPerNamespace(
 		lw := listWatchFunc(kubeClient, ns)
 		reflector := cache.NewReflector(&lw, expectedType, store, 0)
 		go reflector.Run(ctx.Done())
+	}
+}
+
+func (b *Builder) buildStatefulSetCollector() *Collector {
+	return BuildCollector(b.namespaces, "apps/v1beta1", "StatefulSet", generateStatefulSetMetrics)
+}
+
+func BuildCollector(namespaces []string,
+	api string,
+	kind string,
+	generateStore func(obj interface{}) []*metrics.Metric) *Collector {
+	store := metricsstore.NewMetricsStore(generateStore)
+	reflectorPerNs(context.TODO(), &unstructured.Unstructured{}, store, namespaces, api, kind)
+	return newCollector(store)
+}
+
+func reflectorPerNs(
+	ctx context.Context,
+	expectedType interface{},
+	store cache.Store,
+	namespaces []string,
+	api string,
+	kind string,
+) {
+	for _, ns := range namespaces {
+		cfg, err := clientcmd.BuildConfigFromFlags("", "")
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		uc := uclient.NewForConfig(cfg)
+		dclient, err := uc.ClientFor(api, kind, ns)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		lw := listWatchFunc(dclient, ns)
+		reflector := cache.NewReflector(&lw, expectedType, store, 0)
+		go reflector.Run(ctx.Done())
+	}
+}
+
+func listWatchFunc(dynamicInterface dynamic.NamespaceableResourceInterface, namespace string) cache.ListWatch {
+	return cache.ListWatch{
+		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
+			return dynamicInterface.Namespace(namespace).List(opts)
+		},
+		WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
+			return dynamicInterface.Namespace(namespace).Watch(opts)
+		},
 	}
 }

@@ -19,7 +19,6 @@ package collectors
 import (
 	"k8s.io/kube-state-metrics/pkg/metrics"
 
-	"k8s.io/api/apps/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
@@ -124,11 +123,11 @@ func generateStatefulSetMetrics(obj interface{}) []*metrics.Metric {
 	ms := []*metrics.Metric{}
 
 	// TODO: Refactor
-	sPointer := obj.(*v1beta1.StatefulSet)
+	sPointer := obj.(*unstructured.Unstructured)
 	s := *sPointer
 
 	addGauge := func(desc *metricFamilyDef, v float64, lv ...string) {
-		lv = append([]string{s.Namespace, s.Name}, lv...)
+		lv = append([]string{s.GetNamespace(), s.GetName()}, lv...)
 		m, err := metrics.NewMetric(desc.Name, desc.LabelKeys, lv, v)
 		if err != nil {
 			panic(err)
@@ -136,10 +135,14 @@ func generateStatefulSetMetrics(obj interface{}) []*metrics.Metric {
 
 		ms = append(ms, m)
 	}
+	specp := s.Object["spec"]
+	spec := specp.(map[string]interface{})
+	replicas := spec["replicas"].(int64)
+	addGauge(descStatefulSetStatusReplicas, float64(replicas))
+	/* TODO:
 	if !s.CreationTimestamp.IsZero() {
 		addGauge(descStatefulSetCreated, float64(s.CreationTimestamp.Unix()))
 	}
-	addGauge(descStatefulSetStatusReplicas, float64(s.Status.Replicas))
 	addGauge(descStatefulSetStatusReplicasCurrent, float64(s.Status.CurrentReplicas))
 	addGauge(descStatefulSetStatusReplicasReady, float64(s.Status.ReadyReplicas))
 	addGauge(descStatefulSetStatusReplicasUpdated, float64(s.Status.UpdatedReplicas))
@@ -157,5 +160,6 @@ func generateStatefulSetMetrics(obj interface{}) []*metrics.Metric {
 
 	addGauge(descStatefulSetCurrentRevision, 1, s.Status.CurrentRevision)
 	addGauge(descStatefulSetUpdateRevision, 1, s.Status.UpdateRevision)
+	*/
 	return ms
 }
