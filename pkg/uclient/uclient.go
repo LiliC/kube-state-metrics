@@ -3,7 +3,6 @@ package uclient
 import (
 	"fmt"
 
-	"github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -33,17 +32,17 @@ func (c *Client) ForUnstructured(u *unstructured.Unstructured) (dynamic.Namespac
 func (c *Client) ClientFor(apiVersion, kind, namespace string) (dynamic.NamespaceableResourceInterface, error) {
 	apiResourceList, apiResource, err := c.getAPIResource(apiVersion, kind)
 	if err != nil {
-		return nil, errors.Wrapf(err, "discovering resource information failed for %s in %s", kind, apiVersion)
+		return nil, err
 	}
 
 	dc, err := newForConfig(apiResourceList.GroupVersion, c.cfg)
 	if err != nil {
-		return nil, errors.Wrapf(err, "creating dynamic client failed for %s", apiResourceList.GroupVersion)
+		return nil, err
 	}
 
 	gv, err := schema.ParseGroupVersion(apiResourceList.GroupVersion)
 	if err != nil {
-		return nil, errors.Wrapf(err, "parsing GroupVersion failed %s", apiResourceList.GroupVersion)
+		return nil, err
 	}
 
 	gvr := schema.GroupVersionResource{
