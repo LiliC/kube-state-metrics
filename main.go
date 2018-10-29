@@ -36,6 +36,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/kube-state-metrics/pkg/uclient"
 
 	kcollectors "k8s.io/kube-state-metrics/pkg/collectors"
 	"k8s.io/kube-state-metrics/pkg/options"
@@ -109,12 +110,18 @@ func main() {
 	}
 
 	proc.StartReaper()
-
-	kubeClient, err := createKubeClient(opts.Apiserver, opts.Kubeconfig)
+	/*
+		kubeClient, err := createKubeClient(opts.Apiserver, opts.Kubeconfig)
+		if err != nil {
+		}
+	*/
+	// TODO: set flags correctly :)
+	cfg, err := clientcmd.BuildConfigFromFlags(opts.Apiserver, opts.Kubeconfig)
 	if err != nil {
 		glog.Fatalf("Failed to create client: %v", err)
 	}
-	collectorBuilder.WithKubeClient(kubeClient)
+	uc := uclient.NewForConfig(cfg)
+	collectorBuilder.WithDynamicClient(uc)
 
 	ksmMetricsRegistry := prometheus.NewRegistry()
 	ksmMetricsRegistry.Register(kcollectors.ResourcesPerScrapeMetric)

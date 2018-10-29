@@ -18,18 +18,10 @@ limitations under the License.
 package collectors
 
 import (
-	"fmt"
 	"strings"
-
-	autoscaling "k8s.io/api/autoscaling/v2beta1"
-	batchv1 "k8s.io/api/batch/v1"
-	batchv1beta1 "k8s.io/api/batch/v1beta1"
-	extensions "k8s.io/api/extensions/v1beta1"
 
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
-	"k8s.io/api/core/v1"
-	"k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -37,7 +29,6 @@ import (
 	"k8s.io/client-go/dynamic"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kube-state-metrics/pkg/metrics"
 	metricsstore "k8s.io/kube-state-metrics/pkg/metrics_store"
 	"k8s.io/kube-state-metrics/pkg/options"
@@ -48,6 +39,7 @@ import (
 // (https://en.wikipedia.org/wiki/Builder_pattern).
 type Builder struct {
 	kubeClient        clientset.Interface
+	dclient           *uclient.Client
 	namespaces        options.NamespaceList
 	opts              *options.Options
 	ctx               context.Context
@@ -80,6 +72,11 @@ func (b *Builder) WithKubeClient(c clientset.Interface) {
 	b.kubeClient = c
 }
 
+// WithKubeClient sets the dClient property of a Builder.
+func (b *Builder) WithDynamicClient(c *uclient.Client) {
+	b.dclient = c
+}
+
 // Build initializes and registers all enabled collectors.
 func (b *Builder) Build() []*Collector {
 
@@ -102,78 +99,83 @@ func (b *Builder) Build() []*Collector {
 }
 
 var availableCollectors = map[string]func(f *Builder) *Collector{
+	/* TODO:
 	"configmaps": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "v1", "ConfigMap", generateConfigMapMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "v1", "ConfigMap", generateConfigMapMetrics)
 	},
 	"cronjobs": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "batch/v1beta1", "CronJob", generateCronJobMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "batch/v1beta1", "CronJob", generateCronJobMetrics)
 	},
-	"deamonsets": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "extensions/v1beta1", "DeamonSet", generateDeamonSetMetrics)
+	"daemonsets": func(b *Builder) *Collector {
+		return BuildCollector(b.dclient, b.namespaces, "extensions/v1beta1", "DaemonSet", generateDaemonSetMetrics)
 	},
 	"deployments": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "apps/v1beta1", "Deployment", generateDeploymentMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "apps/v1beta1", "Deployment", generateDeploymentMetrics)
 	},
 	"endpoints": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "v1", "Endpoints", generateEndpointsMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "v1", "Endpoints", generateEndpointsMetrics)
 	},
 	"horizontalpodautoscalers": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "autoscaling/v2beta1", "HorizontalPodAutoscaler", generateHorizontalPodAutoscalerMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "autoscaling/v2beta1", "HorizontalPodAutoscaler", generateHPAMetrics)
 	},
 	"jobs": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "batch/v1", "Job", generateJobMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "batch/v1", "Job", generateJobMetrics)
 	},
 	"limitranges": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "v1", "LimitRange", generateLimitRangeMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "v1", "LimitRange", generateLimitRangeMetrics)
 	},
 	"namespaces": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "v1", "Namespace", generateNamespaceMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "v1", "Namespace", generateNamespaceMetrics)
 	},
+	/* TODO: hmm
 	"nodes": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "v1", "Node", generateNodeMetrics)
+		return BuildCollector(b.dclient,b.namespaces, "v1", "Node", generateNodeMetrics)
 	},
 	"persistentvolumeclaims": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "v1", "PersistentVolumeClaim", generatePersistentVolumeClaimMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "v1", "PersistentVolumeClaim", generatePersistentVolumeClaimMetrics)
 	},
 	"persistentvolumes": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "v1", "PersistentVolume", generatePersistentVolumeMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "v1", "PersistentVolume", generatePersistentVolumeMetrics)
 	},
 	"poddisruptionbudgets": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "apps/v1beta1", "PodDisruptionBudget", generatePodDisruptionBudgetMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "apps/v1beta1", "PodDisruptionBudget", generatePodDisruptionBudgetMetrics)
 	},
 	"pods": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "v1", "Pod", generatePodMetrics)
+		return BuildCollector(b.dclient,b.namespaces, "v1", "Pod", generatePodMetrics)
 	},
 	"replicasets": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "apps/v1beta1", "ReplicaSet", generateReplicaSetMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "apps/v1beta1", "ReplicaSet", generateReplicaSetMetrics)
 	},
 	"replicationcontrollers": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "v1", "ReplicationController", generateReplicationControllerMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "v1", "ReplicationController", generateReplicationControllerMetrics)
 	},
 	"resourcequotas": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "v1", "ResourceQuota", generateResourceQuotaMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "v1", "ResourceQuota", generateResourceQuotaMetrics)
 	},
 	"secrets": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "v1", "Secret", generateSecretMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "v1", "Secret", generateSecretMetrics)
 	},
 	"services": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "v1", "Service", generateServiceMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "v1", "Service", generateServiceMetrics)
 	},
+	*/
 	"statefulsets": func(b *Builder) *Collector {
-		return BuildCollector(b.namespaces, "apps/v1beta1", "StatefulSet", generateStatefulSetMetrics)
+		return BuildCollector(b.dclient, b.namespaces, "apps/v1beta1", "StatefulSet", generateStatefulSetMetrics)
 	},
 }
 
-func BuildCollector(namespaces []string,
+func BuildCollector(dclient *uclient.Client,
+	namespaces []string,
 	api string,
 	kind string,
 	generateStore func(obj interface{}) []*metrics.Metric) *Collector {
 	store := metricsstore.NewMetricsStore(generateStore)
-	reflectorPerNs(context.TODO(), &unstructured.Unstructured{}, store, namespaces, api, kind)
+	reflectorPerNs(dclient, context.TODO(), &unstructured.Unstructured{}, store, namespaces, api, kind)
 	return newCollector(store)
 }
 
 func reflectorPerNs(
+	ucl *uclient.Client,
 	ctx context.Context,
 	expectedType interface{},
 	store cache.Store,
@@ -182,18 +184,11 @@ func reflectorPerNs(
 	kind string,
 ) {
 	for _, ns := range namespaces {
-		cfg, err := clientcmd.BuildConfigFromFlags("", "")
+		client, err := ucl.ClientFor(api, kind, ns)
 		if err != nil {
-			fmt.Println(err)
-			return
+			glog.Fatalf("Failed to create client: %v", err)
 		}
-		uc := uclient.NewForConfig(cfg)
-		dclient, err := uc.ClientFor(api, kind, ns)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		lw := listWatchFunc(dclient, ns)
+		lw := listWatchFunc(client, ns)
 		reflector := cache.NewReflector(&lw, expectedType, store, 0)
 		go reflector.Run(ctx.Done())
 	}
