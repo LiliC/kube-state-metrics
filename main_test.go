@@ -17,15 +17,11 @@ limitations under the License.
 package main
 
 import (
-	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
 	"io/ioutil"
-	"net/http"
 	"net/http/httptest"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +30,7 @@ import (
 	"k8s.io/kube-state-metrics/pkg/uclient"
 
 	"k8s.io/api/core/v1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	kcollectors "k8s.io/kube-state-metrics/pkg/collectors"
@@ -48,6 +45,7 @@ func BenchmarkKubeStateMetrics(t *testing.B) {
 		fixtureMultiplier,
 		requestCount,
 	)
+	kubeClient := fake.NewSimpleClientset()
 
 	//kubeClient := fake.NewSimpleClientset()
 	cfg, err := clientcmd.BuildConfigFromFlags("", "/Users/lili/.kube/config")
@@ -55,11 +53,9 @@ func BenchmarkKubeStateMetrics(t *testing.B) {
 		t.Errorf("error injecting resources: %v", err)
 	}
 	uc := uclient.NewForConfig(cfg)
-	/*
-		if err := injectFixtures(kubeClient, fixtureMultiplier); err != nil {
-			t.Errorf("error injecting resources: %v", err)
-		}
-	*/
+	if err := injectFixtures(kubeClient, fixtureMultiplier); err != nil {
+		t.Errorf("error injecting resources: %v", err)
+	}
 	opts := options.NewOptions()
 
 	builder := kcollectors.NewBuilder(context.TODO(), opts)
@@ -85,7 +81,6 @@ func BenchmarkKubeStateMetrics(t *testing.B) {
 	resp := w.Result()
 	body, _ := ioutil.ReadAll(resp.Body)
 
-	t.Errorf("error injecting resources: %s", string(body))
 	fmt.Println(resp.StatusCode)
 	fmt.Println(resp.Header.Get("Content-Type"))
 	fmt.Println(string(body))
@@ -144,45 +139,4 @@ func pod(client *fake.Clientset, index int) error {
 
 	_, err := client.CoreV1().Pods(metav1.NamespaceDefault).Create(&pod)
 	return err
-}
-
-type MetricHandler struct {
-	c                  []*kcollectors.Collector
-	enableGZIPEncoding bool
-}
-
-func (m *MetricHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	resHeader := w.Header()
-	var writer io.Writer = w
-
-	resHeader.Set("Content-Type", `text/plain; version=`+"0.0.4")
-
-	if m.enableGZIPEncoding {
-		// Gzip response if requested. Taken from
-		// github.com/prometheus/client_golang/prometheus/promhttp.decorateWriter.
-		reqHeader := r.Header.Get("Accept-Encoding")
-		parts := strings.Split(reqHeader, ",")
-		for _, part := range parts {
-			part = strings.TrimSpace(part)
-			if part == "gzip" || strings.HasPrefix(part, "gzip;") {
-				writer = gzip.NewWriter(writer)
-				resHeader.Set("Content-Encoding", "gzip")
-			}
-		}
-	}
-
-	for _, c := range m.c {
-		for _, m := range c.Collect() {
-			_, err := fmt.Fprint(writer, *m)
-			if err != nil {
-				// TODO: Handle panic
-				panic(err)
-			}
-		}
-	}
-
-	// In case we gziped the response, we have to close the writer.
-	if closer, ok := writer.(io.Closer); ok {
-		closer.Close()
-	}
 }
