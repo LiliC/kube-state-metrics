@@ -19,12 +19,7 @@ package collectors
 import (
 	"k8s.io/kube-state-metrics/pkg/metrics"
 
-	"k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/watch"
-	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/cache"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 var (
@@ -52,26 +47,15 @@ var (
 	)
 )
 
-func createConfigMapListWatch(kubeClient clientset.Interface, ns string) cache.ListWatch {
-	return cache.ListWatch{
-		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
-			return kubeClient.CoreV1().ConfigMaps(ns).List(opts)
-		},
-		WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
-			return kubeClient.CoreV1().ConfigMaps(ns).Watch(opts)
-		},
-	}
-}
-
 func generateConfigMapMetrics(obj interface{}) []*metrics.Metric {
 	ms := []*metrics.Metric{}
 
 	// TODO: Refactor
-	mPointer := obj.(*v1.ConfigMap)
+	mPointer := obj.(*unstructured.Unstructured)
 	m := *mPointer
 
 	addConstMetric := func(desc *metricFamilyDef, v float64, lv ...string) {
-		lv = append([]string{m.Namespace, m.Name}, lv...)
+		lv = append([]string{m.GetNamespace(), m.GetName()}, lv...)
 
 		m, err := metrics.NewMetric(desc.Name, desc.LabelKeys, lv, v)
 		if err != nil {
@@ -85,11 +69,11 @@ func generateConfigMapMetrics(obj interface{}) []*metrics.Metric {
 	}
 	addGauge(descConfigMapInfo, 1)
 
-	if !m.CreationTimestamp.IsZero() {
-		addGauge(descConfigMapCreated, float64(m.CreationTimestamp.Unix()))
-	}
+	//if m.GetCreationTimestamp() {
+	addGauge(descConfigMapCreated, float64(m.GetCreationTimestamp().Unix()))
+	//}
 
-	addGauge(descConfigMapMetadataResourceVersion, 1, string(m.ObjectMeta.ResourceVersion))
+	addGauge(descConfigMapMetadataResourceVersion, 1, string(m.GetResourceVersion()))
 
 	return ms
 }

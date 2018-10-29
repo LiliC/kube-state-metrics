@@ -209,7 +209,7 @@ func serveMetrics(collectors []*kcollectors.Collector, host string, port int, en
 	mux.Handle("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
 
 	// Add metricsPath
-	mux.Handle(metricsPath, &metricHandler{collectors, enableGZIPEncoding})
+	mux.Handle(metricsPath, &MetricHandler{collectors, enableGZIPEncoding})
 	// Add healthzPath
 	mux.HandleFunc(healthzPath, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
@@ -231,12 +231,12 @@ func serveMetrics(collectors []*kcollectors.Collector, host string, port int, en
 	log.Fatal(http.ListenAndServe(listenAddress, mux))
 }
 
-type metricHandler struct {
+type MetricHandler struct {
 	c                  []*kcollectors.Collector
 	enableGZIPEncoding bool
 }
 
-func (m *metricHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (m *MetricHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	resHeader := w.Header()
 	var writer io.Writer = w
 

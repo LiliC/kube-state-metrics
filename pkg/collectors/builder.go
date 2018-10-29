@@ -93,16 +93,16 @@ func (b *Builder) Build() []*Collector {
 		// TODO: What if not ok?
 	}
 
-	glog.Infof("Active collectors: %s", strings.Join(activeCollectorNames, ","))
+	glog.Infof("hmm Active collectors: %s", strings.Join(activeCollectorNames, ","))
 
 	return collectors
 }
 
 var availableCollectors = map[string]func(f *Builder) *Collector{
-	/* TODO:
 	"configmaps": func(b *Builder) *Collector {
 		return BuildCollector(b.dclient, b.namespaces, "v1", "ConfigMap", generateConfigMapMetrics)
 	},
+	/* TODO:
 	"cronjobs": func(b *Builder) *Collector {
 		return BuildCollector(b.dclient, b.namespaces, "batch/v1beta1", "CronJob", generateCronJobMetrics)
 	},
